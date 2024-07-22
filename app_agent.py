@@ -34,7 +34,7 @@ def get_env(name: str) -> str:
 
 # get_env("DIAL_URL")
 DIAL_URL = "http://localhost:3000"
-AZURE_AI_URL= os.getenv("AZURE_AI_URL", "https://ai-proxy.lab.epam.com")
+AZURE_AI_URL = os.getenv("AZURE_AI_URL", "https://ai-proxy.lab.epam.com")
 API_KEY = get_env("API_KEY")
 EMBEDDINGS_MODEL = os.getenv("EMBEDDINGS_MODEL", "text-embedding-ada-002")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4")
@@ -58,6 +58,7 @@ class CustomCallbackHandler(AsyncCallbackHandler):
         self._choice.append_content(token)
 
 
+# load the document and split it into chunks
 def process(file_abs_url: str, choice: Choice) -> list[Document]:
     if file_abs_url.endswith(".pdf"):
         loader = PyPDFLoader(file_abs_url)
