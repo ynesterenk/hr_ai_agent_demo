@@ -9,13 +9,15 @@ from uuid import uuid4
 
 import uvicorn
 from langchain.callbacks.base import AsyncCallbackHandler
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.embeddings import CacheBackedEmbeddings
 from langchain.globals import set_debug
+from langchain.chains import create_retrieval_chain
 from langchain.storage import LocalFileStore
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from utils import get_last_attachment_url, sanitize_namespace
@@ -96,18 +98,18 @@ class LsegHRRAGApplication(ChatCompletion):
             message = request.messages[-1]
             user_query = message.content or ""
 
-            #declare file url array of file urls
+            # declare file url array of file urls
             file_urls = ["api/files/FSWLtFA648cQNf6WfxHZcFzdABKNsTr7ygwQjYbiDi1n/Onboarding%20Guide.pdf",
                          "api/files/FSWLtFA648cQNf6WfxHZcFzdABKNsTr7ygwQjYbiDi1n/LSEG%20Background%20Check.pdf",
                          "api/files/FSWLtFA648cQNf6WfxHZcFzdABKNsTr7ygwQjYbiDi1n/Onboarding%20Within%20LSEG%20account.pdf",
                          "api/files/FSWLtFA648cQNf6WfxHZcFzdABKNsTr7ygwQjYbiDi1n/New%20Joiner%20General%20Workflow.txt"]
 
-            #declare empty list[Document] texts
+            # declare empty list[Document] texts
             texts = []
-            #for each file url in file urls get file abs url as ulrjoin DIAL_URL and file url
+            # for each file url in file urls get file abs url as ulrjoin DIAL_URL and file url
             for file_url in file_urls:
                 file_abs_url = urljoin(f"{DIAL_URL}/", file_url)
-                #process the file abs url and append the result to texts
+                # process the file abs url and append the result to texts
                 texts.extend(process(file_abs_url, choice))
 
             # Show the user start of calculating embeddings stage
@@ -134,7 +136,8 @@ class LsegHRRAGApplication(ChatCompletion):
                     texts, embeddings, collection_name=collection_name
                 )
 
-            # CustomCallbackHandler allows to pass tokens to the users as they are generated, so as not to wait for a complete response.
+            # CustomCallbackHandler allows to pass tokens to the users as they are generated, so as not to wait for a
+            # complete response.
             llm = AzureChatOpenAI(
                 azure_deployment=CHAT_MODEL,
                 azure_endpoint=AZURE_AI_URL,
@@ -146,14 +149,25 @@ class LsegHRRAGApplication(ChatCompletion):
             )
 
             await response.aflush()
-
-            qa = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=docsearch.as_retriever(search_kwargs={"k": 15}),
+            system_prompt = (
+                "Context: {context}"
             )
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", system_prompt),
+                    ("human", user_query),
+                ]
+            )
+            question_answer_chain = create_stuff_documents_chain(llm, prompt)
+            
+            chain = create_retrieval_chain(docsearch.as_retriever(search_kwargs={"k": 15}), question_answer_chain)
+            # qa = RetrievalQA.from_chain_type(
+            #    llm=llm,
+            #    chain_type="stuff",
+            #    retriever=docsearch.as_retriever(search_kwargs={"k": 15}),
+            # )
 
-            await qa.ainvoke({"query": user_query})
+            await chain.ainvoke({"input": user_query})
 
             docsearch.delete_collection()
 
